@@ -24,32 +24,32 @@ type Config struct {
 	Repositories map[string]Repository `json:"repositories"`
 }
 
-func Load(filePath string) (ApplicationConfig, error) {
+func Load(filePath string) (model.Platform, error) {
 	configFile, err := os.Open(filePath)
 	if err != nil {
-		return ApplicationConfig{}, err
+		return model.Platform{}, err
 	}
 	defer configFile.Close()
 	configBody, err := io.ReadAll(configFile)
 	if err != nil {
-		return ApplicationConfig{}, err
+		return model.Platform{}, err
 	}
 
 	var config Config
 	err = json.Unmarshal(configBody, &config)
 	if err != nil {
-		return ApplicationConfig{}, err
+		return model.Platform{}, err
 	}
 	err = assertRepositories(config)
 	if err != nil {
-		return ApplicationConfig{}, err
+		return model.Platform{}, err
 	}
 
 	for contextID, context := range config.Contexts {
 		if context.BaseContext != "" {
 			baseContext, ok := config.Contexts[context.BaseContext]
 			if !ok {
-				return ApplicationConfig{}, fmt.Errorf(
+				return model.Platform{}, fmt.Errorf(
 					"base context %v for context %v not found", context.BaseContext, contextID,
 				)
 			}
@@ -57,16 +57,10 @@ func Load(filePath string) (ApplicationConfig, error) {
 		}
 	}
 
-	return GetApplicationConfig(config), nil
+	return MapToPlatformConfig(config), nil
 }
 
-type ApplicationConfig struct {
-	RepoSrc      string
-	Contexts     map[model.ContextID]model.Context
-	Repositories []model.Repository
-}
-
-func GetApplicationConfig(config Config) ApplicationConfig {
+func MapToPlatformConfig(config Config) model.Platform {
 	contexts := make(map[model.ContextID]model.Context, len(config.Contexts))
 	for contextID, context := range config.Contexts {
 		contexts[contextID] = model.Context{
@@ -83,7 +77,7 @@ func GetApplicationConfig(config Config) ApplicationConfig {
 		})
 	}
 
-	return ApplicationConfig{
+	return model.Platform{
 		RepoSrc:      config.RepoSrc,
 		Contexts:     contexts,
 		Repositories: repositories,

@@ -22,33 +22,30 @@ type Platform interface {
 }
 
 func NewPlatformService(
-	contexts map[model.ContextID]model.Context,
-	repositories []model.Repository,
+	config model.Platform,
 	logger applogger.Logger,
 	repositoryProvider RepositoryProvider,
 ) Platform {
 	return &platform{
-		contexts:           contexts,
-		repositories:       repositories,
+		config:             config,
 		logger:             logger,
 		repositoryProvider: repositoryProvider,
 	}
 }
 
 type platform struct {
-	contexts     map[model.ContextID]model.Context
-	repositories []model.Repository
+	config model.Platform
 
 	logger             applogger.Logger
 	repositoryProvider RepositoryProvider
 }
 
 func (service platform) Checkout(ctx context.Context, contextID string) error {
-	c, ok := service.contexts[contextID]
+	c, ok := service.config.Contexts[contextID]
 	if !ok {
 		return fmt.Errorf("context with id %v not found", contextID)
 	}
-	for _, repository := range service.repositories {
+	for _, repository := range service.config.Repositories {
 		err := service.checkout(ctx, repository, c.Branches[repository.ID])
 		if err != nil {
 			return err
