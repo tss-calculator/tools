@@ -1,0 +1,19 @@
+{
+  "repoSrc": "src",
+  "contexts": {
+    "default": {
+      "branches": {
+        "frontend": "master"
+      }
+    },
+    "dev": {
+      "baseContext": "default",
+      "branches": {}
+    }
+  },
+  "repositories": {
+    "frontend": {
+      "gitSrc": "git@github.com:tss-calculator/frontend.git"
+    }
+  }
+}
