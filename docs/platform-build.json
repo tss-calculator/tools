@@ -1,4 +1,13 @@
 {
-  "build": "bin/build",
-  "dependsOn": []
+  "build": {
+    "sources": {
+      "executable": "brewkit",
+      "args": ["build"]
+    },
+    "docker-image": {
+      "executable": "brewkit",
+      "args": ["build"],
+      "dependsOn": [""]
+    }
+  }
 }

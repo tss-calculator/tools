@@ -7,7 +7,9 @@ import (
 	applogger "github.com/tss-calculator/go-lib/pkg/application/logger"
 	"github.com/tss-calculator/tools/pkg/platform/application/model"
 	"github.com/tss-calculator/tools/pkg/platform/application/service"
+	"github.com/tss-calculator/tools/pkg/platform/infrastructure/builder"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/command"
+	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config/buildconfig"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/provider"
 )
 
@@ -22,8 +24,10 @@ func NewDependencyContainer(
 	logger applogger.Logger,
 	platformConfig model.Platform,
 ) Container {
-	repositoryProvider := provider.NewRepositoryProvider(platformConfig.RepoSrc, command.NewCommandRunner(logger))
-	platform := service.NewPlatformService(platformConfig, logger, repositoryProvider)
+	runner := command.NewCommandRunner(logger)
+	repositoryProvider := provider.NewRepositoryProvider(platformConfig.RepoSrc, runner)
+	repositoryBuilder := builder.NewRepositoryBuilder(logger, buildconfig.NewConfigLoader(), repositoryProvider, runner)
+	platform := service.NewPlatformService(platformConfig, logger, repositoryProvider, repositoryBuilder)
 
 	return &container{
 		platform:           platform,

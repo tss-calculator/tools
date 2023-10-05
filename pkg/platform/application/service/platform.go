@@ -15,21 +15,29 @@ type RepositoryProvider interface {
 	Fetch(ctx context.Context, repository model.Repository) error
 	Checkout(ctx context.Context, repository model.Repository, branch string) error
 	RepositoryPath(id model.RepositoryID) string
+	Hash(ctx context.Context, repository model.Repository) (string, error)
+}
+
+type RepositoryBuilder interface {
+	Build(ctx context.Context, repositories map[model.RepositoryID]model.Repository) error
 }
 
 type Platform interface {
 	Checkout(ctx context.Context, context string) error
+	Build(ctx context.Context) error
 }
 
 func NewPlatformService(
 	config model.Platform,
 	logger applogger.Logger,
 	repositoryProvider RepositoryProvider,
+	repositoryBuilder RepositoryBuilder,
 ) Platform {
 	return &platform{
 		config:             config,
 		logger:             logger,
 		repositoryProvider: repositoryProvider,
+		repositoryBuilder:  repositoryBuilder,
 	}
 }
 
@@ -38,6 +46,16 @@ type platform struct {
 
 	logger             applogger.Logger
 	repositoryProvider RepositoryProvider
+	repositoryBuilder  RepositoryBuilder
+}
+
+func (service platform) Build(ctx context.Context) error {
+	repositoryMap := make(map[model.RepositoryID]model.Repository)
+	for _, repository := range service.config.Repositories {
+		r := repository
+		repositoryMap[r.ID] = r
+	}
+	return service.repositoryBuilder.Build(ctx, repositoryMap)
 }
 
 func (service platform) Checkout(ctx context.Context, contextID string) error {
@@ -45,13 +63,9 @@ func (service platform) Checkout(ctx context.Context, contextID string) error {
 	if !ok {
 		return fmt.Errorf("context with id %v not found", contextID)
 	}
-	for _, repository := range service.config.Repositories {
-		err := service.checkout(ctx, repository, c.Branches[repository.ID])
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return service.iterateRepositories(func(repository model.Repository) error {
+		return service.checkout(ctx, repository, c.Branches[repository.ID])
+	})
 }
 
 func (service platform) cloneIfNotExist(ctx context.Context, repository model.Repository) error {
@@ -81,4 +95,14 @@ func (service platform) checkout(ctx context.Context, repository model.Repositor
 		return err
 	}
 	return service.repositoryProvider.Checkout(ctx, repository, branch)
+}
+
+func (service platform) iterateRepositories(f func(repository model.Repository) error) error {
+	for _, repository := range service.config.Repositories {
+		err := f(repository)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

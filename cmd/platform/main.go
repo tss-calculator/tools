@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/tss-calculator/go-lib/pkg/infrastructure/logger"
-	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config"
+	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config/platformconfig"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/dependency"
 
 	"github.com/urfave/cli/v2"
@@ -19,7 +19,7 @@ func main() {
 	ctx = listenOSKillSignalsContext(ctx)
 	mainLogger := logger.NewTextLogger()
 
-	platformConfig, err := config.Load("platform.json")
+	platformConfig, err := platformconfig.Load("platform.json")
 	if err != nil {
 		mainLogger.FatalError(err, "failed load platform config")
 	}
@@ -39,6 +39,15 @@ func main() {
 				Name: "checkout",
 				Action: func(c *cli.Context) error {
 					return checkout(c.Context, c.String("context"))
+				},
+			},
+			&cli.Command{
+				Name: "build",
+				Before: func(c *cli.Context) error {
+					return checkout(c.Context, c.String("context"))
+				},
+				Action: func(c *cli.Context) error {
+					return build(c.Context)
 				},
 			},
 		},

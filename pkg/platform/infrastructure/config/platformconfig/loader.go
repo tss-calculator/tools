@@ -1,4 +1,4 @@
-package config
+package platformconfig
 
 import (
 	"encoding/json"

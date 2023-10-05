@@ -15,7 +15,7 @@ type Command struct {
 }
 
 type Runner interface {
-	Execute(ctx context.Context, command Command) error
+	Execute(ctx context.Context, command Command) (string, error)
 }
 
 func NewCommandRunner(logger applogger.Logger) Runner {
@@ -28,14 +28,14 @@ type runner struct {
 	logger applogger.Logger
 }
 
-func (r runner) Execute(ctx context.Context, command Command) error {
+func (r runner) Execute(ctx context.Context, command Command) (string, error) {
 	if command.Executable == "" {
-		return errors.New("command executable can not be empty")
+		return "", errors.New("command executable can not be empty")
 	}
 	// nolint:gosec
 	cmd := exec.CommandContext(ctx, command.Executable, command.Args...)
 	cmd.Dir = command.WorkDir
 	r.logger.Debug(cmd.String())
-	_, err := cmd.Output()
-	return err
+	result, err := cmd.Output()
+	return string(result), err
 }

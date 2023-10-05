@@ -39,7 +39,7 @@ func (provider repositoryProvider) Exist(repository model.Repository) (bool, err
 }
 
 func (provider repositoryProvider) Clone(ctx context.Context, repository model.Repository) error {
-	err := provider.runner.Execute(ctx, command.Command{
+	_, err := provider.runner.Execute(ctx, command.Command{
 		Executable: "git",
 		Args:       []string{"clone", repository.GitSrc, provider.RepositoryPath(repository.ID)},
 	})
@@ -50,7 +50,7 @@ func (provider repositoryProvider) Checkout(ctx context.Context, repository mode
 	if branch == "" {
 		return fmt.Errorf("branch for repository %v is empty", repository.ID)
 	}
-	err := provider.runner.Execute(ctx, command.Command{
+	_, err := provider.runner.Execute(ctx, command.Command{
 		WorkDir:    provider.RepositoryPath(repository.ID),
 		Executable: "git",
 		Args:       []string{"checkout", fmt.Sprintf("origin/%v", branch)},
@@ -59,7 +59,7 @@ func (provider repositoryProvider) Checkout(ctx context.Context, repository mode
 }
 
 func (provider repositoryProvider) Fetch(ctx context.Context, repository model.Repository) error {
-	err := provider.runner.Execute(ctx, command.Command{
+	_, err := provider.runner.Execute(ctx, command.Command{
 		WorkDir:    provider.RepositoryPath(repository.ID),
 		Executable: "git",
 		Args:       []string{"fetch"},
@@ -69,4 +69,13 @@ func (provider repositoryProvider) Fetch(ctx context.Context, repository model.R
 
 func (provider repositoryProvider) RepositoryPath(id model.RepositoryID) string {
 	return provider.repoDir + "/" + id
+}
+
+func (provider repositoryProvider) Hash(ctx context.Context, repository model.Repository) (string, error) {
+	hash, err := provider.runner.Execute(ctx, command.Command{
+		WorkDir:    provider.RepositoryPath(repository.ID),
+		Executable: "git",
+		Args:       []string{"rev-parse", "HEAD"},
+	})
+	return hash, errors.Wrapf(err, "failed to fetch repository %v", repository.ID)
 }
