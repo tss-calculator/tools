@@ -68,17 +68,6 @@ func (service platform) Checkout(ctx context.Context, contextID string) error {
 	})
 }
 
-func (service platform) cloneIfNotExist(ctx context.Context, repository model.Repository) error {
-	exist, err := service.repositoryProvider.Exist(repository)
-	if err != nil {
-		return err
-	}
-	if !exist {
-		return service.repositoryProvider.Clone(ctx, repository)
-	}
-	return nil
-}
-
 func (service platform) checkout(ctx context.Context, repository model.Repository, branch string) error {
 	service.logger.Info(fmt.Sprintf("checkout \"%v\" to branch \"%v\"...", repository.ID, branch))
 	start := time.Now()
@@ -95,6 +84,17 @@ func (service platform) checkout(ctx context.Context, repository model.Repositor
 		return err
 	}
 	return service.repositoryProvider.Checkout(ctx, repository, branch)
+}
+
+func (service platform) cloneIfNotExist(ctx context.Context, repository model.Repository) error {
+	exist, err := service.repositoryProvider.Exist(repository)
+	if err != nil {
+		return err
+	}
+	if !exist {
+		return service.repositoryProvider.Clone(ctx, repository)
+	}
+	return nil
 }
 
 func (service platform) iterateRepositories(f func(repository model.Repository) error) error {
