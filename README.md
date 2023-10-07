@@ -3,15 +3,7 @@
 ### Build
 
 ```bash
-go mod tidy
-```
-
-```bash
-go test ./...
-```
-
-```bash
-golangci-lint run
+brewkit build
 ```
 
 ### Release
