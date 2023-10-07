@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/pkg/errors v0.9.1
-	github.com/tss-calculator/go-lib v0.0.0-20231002190814-c22830c533d3
+	github.com/tss-calculator/go-lib v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
 )
 
