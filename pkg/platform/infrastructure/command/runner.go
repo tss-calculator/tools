@@ -36,6 +36,6 @@ func (r runner) Execute(ctx context.Context, command Command) (string, error) {
 	cmd := exec.CommandContext(ctx, command.Executable, command.Args...)
 	cmd.Dir = command.WorkDir
 	r.logger.Debug(cmd.String())
-	result, err := cmd.Output()
+	result, err := cmd.CombinedOutput()
 	return string(result), err
 }

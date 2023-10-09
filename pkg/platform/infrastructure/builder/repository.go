@@ -3,6 +3,8 @@ package builder
 import (
 	stdcontext "context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	applogger "github.com/tss-calculator/go-lib/pkg/application/logger"
@@ -97,9 +99,33 @@ func (builder repositoryBuilder) buildDockerImage(ctx stdcontext.Context, reposi
 	defer func() {
 		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start).String()))
 	}()
+	args, err := builder.prepareArgs(ctx, buildConfig.DockerImage.Args)
+	if err != nil {
+		return "", err
+	}
 	return builder.runner.Execute(ctx, command.Command{
 		WorkDir:    builder.repositoryProvider.RepositoryPath(repositoryID),
 		Executable: buildConfig.DockerImage.Executable,
-		Args:       buildConfig.DockerImage.Args,
+		Args:       args,
 	})
 }
+
+func (builder repositoryBuilder) prepareArgs(ctx stdcontext.Context, args []string) ([]string, error) {
+	result := make([]string, 0, len(args))
+	for _, arg := range args {
+		if !hashArgRegex.MatchString(arg) {
+			result = append(result, arg)
+			continue
+		}
+		match := hashArgRegex.FindStringSubmatch(arg)
+		repositoryID := strings.ToLower(match[1])
+		hash, err := builder.repositoryProvider.Hash(ctx, repositoryID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, strings.ReplaceAll(arg, match[0], hash))
+	}
+	return result, nil
+}
+
+var hashArgRegex = regexp.MustCompile("%(.+)-HASH%")

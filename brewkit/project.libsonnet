@@ -33,6 +33,7 @@ local gosources = [
                 workdir: "/app",
                 env: {
                     GOCACHE: "/app/cache/go-build",
+                    CGO_ENABLED: "0",
                 },
                 copy: copyFrom(
                     "gosources",

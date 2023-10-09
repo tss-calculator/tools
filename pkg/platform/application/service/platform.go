@@ -15,7 +15,7 @@ type RepositoryProvider interface {
 	Fetch(ctx context.Context, repository model.Repository) error
 	Checkout(ctx context.Context, repository model.Repository, branch string) error
 	RepositoryPath(id model.RepositoryID) string
-	Hash(ctx context.Context, repository model.Repository) (string, error)
+	Hash(ctx context.Context, repositoryID model.RepositoryID) (string, error)
 }
 
 type RepositoryBuilder interface {

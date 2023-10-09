@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/pkg/errors"
+
 	"github.com/tss-calculator/tools/pkg/platform/application/model"
 	"github.com/tss-calculator/tools/pkg/platform/application/service"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/command"
-
-	"github.com/pkg/errors"
 )
 
 func NewRepositoryProvider(
@@ -71,11 +71,11 @@ func (provider repositoryProvider) RepositoryPath(id model.RepositoryID) string 
 	return provider.repoDir + "/" + id
 }
 
-func (provider repositoryProvider) Hash(ctx context.Context, repository model.Repository) (string, error) {
+func (provider repositoryProvider) Hash(ctx context.Context, repositoryID model.RepositoryID) (string, error) {
 	hash, err := provider.runner.Execute(ctx, command.Command{
-		WorkDir:    provider.RepositoryPath(repository.ID),
+		WorkDir:    provider.RepositoryPath(repositoryID),
 		Executable: "git",
 		Args:       []string{"rev-parse", "HEAD"},
 	})
-	return hash, errors.Wrapf(err, "failed to fetch repository %v", repository.ID)
+	return hash, errors.Wrapf(err, "failed to get hash from repository %v", repositoryID)
 }
