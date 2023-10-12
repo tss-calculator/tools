@@ -15,6 +15,13 @@ import (
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config/buildconfig"
 )
 
+var hashArgRegex = regexp.MustCompile("%(.+)-HASH%")
+
+const (
+	regexpFullStr = 0
+	regexpRepoID  = 1
+)
+
 func NewRepositoryBuilder(
 	logger applogger.Logger,
 	configLoader buildconfig.ConfigLoader,
@@ -118,14 +125,12 @@ func (builder repositoryBuilder) prepareArgs(ctx stdcontext.Context, args []stri
 			continue
 		}
 		match := hashArgRegex.FindStringSubmatch(arg)
-		repositoryID := strings.ToLower(match[1])
+		repositoryID := strings.ToLower(match[regexpRepoID])
 		hash, err := builder.repositoryProvider.Hash(ctx, repositoryID)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, strings.ReplaceAll(arg, match[0], hash))
+		result = append(result, strings.ReplaceAll(arg, match[regexpFullStr], hash))
 	}
 	return result, nil
 }
-
-var hashArgRegex = regexp.MustCompile("%(.+)-HASH%")
