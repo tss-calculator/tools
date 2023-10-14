@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +17,10 @@ type RepositoryProvider interface {
 	Checkout(ctx context.Context, repository model.Repository, branch string) error
 	RepositoryPath(id model.RepositoryID) string
 	Hash(ctx context.Context, repositoryID model.RepositoryID) (string, error)
+	BranchName(ctx context.Context, repositoryID model.RepositoryID) (string, error)
+	Reset(ctx context.Context, repositoryID model.RepositoryID) error
+	Merge(ctx context.Context, repositoryID model.RepositoryID, branch string) error
+	Push(ctx context.Context, repositoryID model.RepositoryID, dryRun bool) error
 }
 
 type RepositoryBuilder interface {
@@ -23,8 +28,11 @@ type RepositoryBuilder interface {
 }
 
 type Platform interface {
-	Checkout(ctx context.Context, context string) error
+	Checkout(ctx context.Context, context model.ContextID) error
 	Build(ctx context.Context) error
+	ResetContext(ctx context.Context) error
+	MergeContext(ctx context.Context, fromContext model.ContextID) error
+	PushContext(ctx context.Context, context model.ContextID, force bool) error
 }
 
 func NewPlatformService(
@@ -58,13 +66,70 @@ func (service platform) Build(ctx context.Context) error {
 	return service.repositoryBuilder.Build(ctx, repositoryMap)
 }
 
-func (service platform) Checkout(ctx context.Context, contextID string) error {
+func (service platform) Checkout(ctx context.Context, contextID model.ContextID) error {
 	c, ok := service.config.Contexts[contextID]
 	if !ok {
 		return fmt.Errorf("context with id %v not found", contextID)
 	}
-	return service.iterateRepositories(func(repository model.Repository) error {
+	err := service.iterateRepositories(func(repository model.Repository) error {
 		return service.checkout(ctx, repository, c.Branches[repository.ID])
+	})
+	if err != nil {
+		return err
+	}
+	return service.ResetContext(ctx)
+}
+
+func (service platform) ResetContext(ctx context.Context) error {
+	return service.iterateRepositories(func(repository model.Repository) error {
+		return service.repositoryProvider.Reset(ctx, repository.ID)
+	})
+}
+
+func (service platform) MergeContext(ctx context.Context, fromContext model.ContextID) error {
+	from, contextExist := service.config.Contexts[fromContext]
+	if !contextExist {
+		return fmt.Errorf("context with id %v not found", fromContext)
+	}
+	return service.iterateRepositories(func(repository model.Repository) error {
+		currentBranch, err := service.repositoryProvider.BranchName(ctx, repository.ID)
+		if err != nil {
+			return err
+		}
+		branch, branchExist := from.Branches[repository.ID]
+		if !branchExist || currentBranch == branch {
+			service.logger.Info(fmt.Sprintf("skip merge branch from repository \"%v\"", repository.ID))
+			return nil
+		}
+		service.logger.Info(fmt.Sprintf("merge branch \"%v\" to \"%v\" from repository \"%v\"", branch, currentBranch, repository.ID))
+		err = service.repositoryProvider.Merge(ctx, repository.ID, branch)
+		if err != nil {
+			service.logger.Error(err, fmt.Sprintf("failed merge repository \"%v\"", repository.ID))
+			resetErr := service.repositoryProvider.Reset(ctx, repository.ID)
+			return errors.Join(err, resetErr)
+		}
+		return nil
+	})
+}
+
+func (service platform) PushContext(ctx context.Context, contextID model.ContextID, force bool) error {
+	c, contextExist := service.config.Contexts[contextID]
+	if !contextExist {
+		return fmt.Errorf("context with id %v not found", contextID)
+	}
+	var bC model.Context
+	if c.BaseContextID != nil {
+		bC = service.config.Contexts[*c.BaseContextID]
+	}
+	return service.iterateRepositories(func(repository model.Repository) error {
+		baseBranch := bC.Branches[repository.ID]
+		branch, branchExist := c.Branches[repository.ID]
+		if !branchExist || branch == baseBranch {
+			service.logger.Info(fmt.Sprintf("skip push repository \"%v\"", repository.ID))
+			return nil
+		}
+		service.logger.Info(fmt.Sprintf("push repository \"%v\" (dry-run = %v)", repository.ID, !force))
+		return service.repositoryProvider.Push(ctx, repository.ID, !force)
 	})
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/tss-calculator/go-lib/pkg/infrastructure/logger"
@@ -50,11 +51,43 @@ func main() {
 					return build(c.Context)
 				},
 			},
+			&cli.Command{
+				Name: "reset-context",
+				Action: func(c *cli.Context) error {
+					return resetContext(c.Context)
+				},
+			},
+			&cli.Command{
+				Name: "merge-context",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "from-context",
+						Required: true,
+					},
+				},
+				Before: func(c *cli.Context) error {
+					return checkout(c.Context, c.String("context"))
+				},
+				Action: func(c *cli.Context) error {
+					return mergeContext(c.Context, c.String("from-context"))
+				},
+			},
+			&cli.Command{
+				Name: "push-context",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name: "force",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return pushContext(c.Context, c.String("context"), c.Bool("force"))
+				},
+			},
 		},
 	}
 	err = app.RunContext(ctx, os.Args)
 	if err != nil {
-		mainLogger.FatalError(err)
+		mainLogger.FatalError(err, "failed execute command "+strings.Join(os.Args, " "))
 	}
 }
 

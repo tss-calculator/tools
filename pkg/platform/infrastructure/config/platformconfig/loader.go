@@ -64,8 +64,9 @@ func MapToPlatformConfig(config Config) model.Platform {
 	contexts := make(map[model.ContextID]model.Context, len(config.Contexts))
 	for contextID, context := range config.Contexts {
 		contexts[contextID] = model.Context{
-			ID:       contextID,
-			Branches: context.Branches,
+			ID:            contextID,
+			BaseContextID: toOptString(context.BaseContext),
+			Branches:      context.Branches,
 		}
 	}
 
@@ -102,4 +103,11 @@ func assertRepositories(config Config) error {
 		}
 	}
 	return nil
+}
+
+func toOptString(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }
