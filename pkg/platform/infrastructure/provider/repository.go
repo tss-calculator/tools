@@ -61,7 +61,7 @@ func (provider repositoryProvider) Checkout(ctx context.Context, repository mode
 	_, err = provider.runner.Execute(ctx, command.Command{
 		WorkDir:    provider.RepositoryPath(repository.ID),
 		Executable: "git",
-		Args:       []string{"checkout", "-b", branch, fmt.Sprintf("origin/%v", branch)},
+		Args:       []string{"checkout", "-B", branch, fmt.Sprintf("origin/%v", branch)},
 	})
 	return errors.Wrapf(err, "failed to checkout repository %v on branch %v", repository.ID, branch)
 }
