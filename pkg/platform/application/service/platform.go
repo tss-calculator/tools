@@ -20,7 +20,7 @@ type RepositoryProvider interface {
 	BranchName(ctx context.Context, repositoryID model.RepositoryID) (string, error)
 	Reset(ctx context.Context, repositoryID model.RepositoryID) error
 	Merge(ctx context.Context, repositoryID model.RepositoryID, branch string) error
-	Push(ctx context.Context, repositoryID model.RepositoryID, dryRun bool) error
+	Push(ctx context.Context, repositoryID model.RepositoryID, dryRun bool) (string, error)
 }
 
 type RepositoryBuilder interface {
@@ -129,7 +129,9 @@ func (service platform) PushContext(ctx context.Context, contextID model.Context
 			return nil
 		}
 		service.logger.Info(fmt.Sprintf("push repository \"%v\" (dry-run = %v)", repository.ID, !force))
-		return service.repositoryProvider.Push(ctx, repository.ID, !force)
+		output, err := service.repositoryProvider.Push(ctx, repository.ID, !force)
+		service.logger.Info(output)
+		return err
 	})
 }
 

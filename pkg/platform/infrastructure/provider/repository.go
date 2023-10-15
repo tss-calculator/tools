@@ -129,19 +129,15 @@ func (provider repositoryProvider) Merge(ctx context.Context, repositoryID model
 	return nil
 }
 
-func (provider repositoryProvider) Push(ctx context.Context, repositoryID model.RepositoryID, dryRun bool) error {
+func (provider repositoryProvider) Push(ctx context.Context, repositoryID model.RepositoryID, dryRun bool) (string, error) {
 	args := []string{"push"}
 	if dryRun {
 		args = append(args, "--dry-run")
 	}
-	out, err := provider.runner.Execute(ctx, command.Command{
+	output, err := provider.runner.Execute(ctx, command.Command{
 		WorkDir:    provider.RepositoryPath(repositoryID),
 		Executable: "git",
 		Args:       args,
 	})
-	fmt.Println(out)
-	if err != nil {
-		return errors.Wrapf(err, "failed to push repository %v", repositoryID)
-	}
-	return nil
+	return output, errors.Wrapf(err, "failed to push repository %v", repositoryID)
 }
