@@ -51,14 +51,7 @@ func (provider repositoryProvider) Checkout(ctx context.Context, repository mode
 	if branch == "" {
 		return fmt.Errorf("branch for repository %v is empty", repository.ID)
 	}
-	currentBranch, err := provider.BranchName(ctx, repository.ID)
-	if err != nil {
-		return err
-	}
-	if branch == currentBranch {
-		return nil
-	}
-	_, err = provider.runner.Execute(ctx, command.Command{
+	_, err := provider.runner.Execute(ctx, command.Command{
 		WorkDir:    provider.RepositoryPath(repository.ID),
 		Executable: "git",
 		Args:       []string{"checkout", "-B", branch, fmt.Sprintf("origin/%v", branch)},
