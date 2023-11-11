@@ -3,28 +3,19 @@ package builder
 import (
 	stdcontext "context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	applogger "github.com/tss-calculator/go-lib/pkg/application/logger"
-
-	"github.com/tss-calculator/tools/pkg/platform/application/model"
+	"github.com/tss-calculator/tools/pkg/platform/application/model/platform"
 	"github.com/tss-calculator/tools/pkg/platform/application/service"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/command"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config/buildconfig"
 )
 
-var hashArgRegex = regexp.MustCompile("%(.+)-HASH%")
-
-const (
-	regexpFullStr = 0
-	regexpRepoID  = 1
-)
-
 func NewRepositoryBuilder(
 	logger applogger.Logger,
-	configLoader buildconfig.ConfigLoader,
+	configLoader *buildconfig.Loader,
 	repositoryProvider service.RepositoryProvider,
 	runner command.Runner,
 ) service.RepositoryBuilder {
@@ -38,48 +29,37 @@ func NewRepositoryBuilder(
 
 type repositoryBuilder struct {
 	logger             applogger.Logger
-	configLoader       buildconfig.ConfigLoader
+	configLoader       *buildconfig.Loader
 	repositoryProvider service.RepositoryProvider
 	runner             command.Runner
 }
 
 func (builder repositoryBuilder) Build(
 	ctx stdcontext.Context,
-	repositories map[model.RepositoryID]model.Repository,
+	registry string,
+	repositories map[platform.RepositoryID]platform.Repository,
 ) error {
-	buildRepository := func(repository model.Repository, buildConfig model.BuildConfig) error {
-		output, err := builder.buildSources(ctx, repository.ID, buildConfig)
-		if err != nil {
-			builder.logger.Debug(output)
-			return err
+	buildMap := make(map[platform.RepositoryID]struct{})
+	buildRepository := func(repository platform.Repository) error {
+		if _, ok := buildMap[repository.ID]; ok {
+			return nil
 		}
-		output, err = builder.buildDockerImage(ctx, repository.ID, buildConfig)
-		builder.logger.Debug(output)
+		err := builder.buildRepository(ctx, registry, repository)
 		if err != nil {
 			return err
 		}
+		buildMap[repository.ID] = struct{}{}
 		return nil
 	}
-	buildConfigMap := make(map[model.RepositoryID]model.BuildConfig)
-	for repositoryID := range repositories {
-		buildConfig, err := builder.configLoader.Load(builder.repositoryProvider.RepositoryPath(repositoryID) + "/platform-build.json")
-		if err != nil {
-			return err
-		}
-		buildConfigMap[repositoryID] = buildConfig
-	}
-	buildMap := make(map[model.RepositoryID]struct{})
-	for repositoryID, repository := range repositories {
-		if _, ok := buildMap[repositoryID]; ok {
-			continue
-		}
-		for _, depends := range buildConfigMap[repositoryID].DockerImage.DependsOn {
-			err := buildRepository(repositories[depends], buildConfigMap[depends])
+
+	for _, repository := range repositories {
+		for _, repositoryID := range repository.DependsOn {
+			err := buildRepository(repositories[repositoryID])
 			if err != nil {
 				return err
 			}
 		}
-		err := buildRepository(repository, buildConfigMap[repositoryID])
+		err := buildRepository(repository)
 		if err != nil {
 			return err
 		}
@@ -87,50 +67,114 @@ func (builder repositoryBuilder) Build(
 	return nil
 }
 
-func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repositoryID model.RepositoryID, buildConfig model.BuildConfig) (string, error) {
-	builder.logger.Info(fmt.Sprintf("start build sources \"%v\"...", repositoryID))
+func (builder repositoryBuilder) buildRepository(ctx stdcontext.Context, registry string, repository platform.Repository) error {
+	err := builder.buildSources(ctx, repository)
+	if err != nil {
+		return err
+	}
+	return builder.buildDockerImages(ctx, registry, repository)
+}
+
+func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repository platform.Repository) error {
+	builder.logger.Info(fmt.Sprintf("start build sources \"%v\"", repository.ID))
 	start := time.Now()
 	defer func() {
-		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start).String()))
+		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start)))
 	}()
-	return builder.runner.Execute(ctx, command.Command{
-		WorkDir:    builder.repositoryProvider.RepositoryPath(repositoryID),
+
+	repositoryPath := builder.repositoryProvider.RepositoryPath(repository.ID)
+	buildConfig, err := builder.configLoader.Load(repositoryPath + "/platform-build.json")
+	if err != nil {
+		return err
+	}
+
+	output, err := builder.runner.Execute(ctx, command.Command{
+		WorkDir:    repositoryPath,
 		Executable: buildConfig.Sources.Executable,
 		Args:       buildConfig.Sources.Args,
 	})
+	builder.logger.Debug(output)
+	return err
 }
 
-func (builder repositoryBuilder) buildDockerImage(ctx stdcontext.Context, repositoryID model.RepositoryID, buildConfig model.BuildConfig) (string, error) {
-	builder.logger.Info(fmt.Sprintf("start build docker image \"%v\"...", repositoryID))
+func (builder repositoryBuilder) buildDockerImages(ctx stdcontext.Context, registry string, repository platform.Repository) error {
+	builder.logger.Info(fmt.Sprintf("start build docker images for \"%v\"", repository.ID))
 	start := time.Now()
 	defer func() {
-		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start).String()))
+		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start)))
 	}()
-	args, err := builder.prepareArgs(ctx, buildConfig.DockerImage.Args)
+
+	repositoryPath := builder.repositoryProvider.RepositoryPath(repository.ID)
+	buildConfig, err := builder.configLoader.Load(repositoryPath + "/platform-build.json")
 	if err != nil {
-		return "", err
+		return err
 	}
-	return builder.runner.Execute(ctx, command.Command{
-		WorkDir:    builder.repositoryProvider.RepositoryPath(repositoryID),
-		Executable: buildConfig.DockerImage.Executable,
-		Args:       args,
-	})
+
+	args := make(map[string]string)
+	args["REGISTRY"] = registry
+	for _, depends := range repository.DependsOn {
+		hash, err2 := builder.repositoryProvider.Hash(ctx, depends)
+		if err2 != nil {
+			return err2
+		}
+		args[strings.ReplaceAll(depends, "-", "_")] = hash
+	}
+
+	repositoryHash, err := builder.repositoryProvider.Hash(ctx, repository.ID)
+	if err != nil {
+		return err
+	}
+	args[strings.ReplaceAll(repository.ID, "-", "_")] = repositoryHash
+	for _, image := range buildConfig.Images {
+		var hash string
+		var branch string
+		if image.TagBy == nil {
+			hash, branch, err = builder.tagInfo(ctx, repository.ID)
+		} else {
+			hash, branch, err = builder.tagInfo(ctx, *image.TagBy)
+		}
+		if err != nil {
+			return err
+		}
+		output, err := builder.runner.Execute(ctx, command.Command{
+			WorkDir:    repositoryPath,
+			Executable: "docker",
+			Args: append([]string{
+				"build",
+				image.Context,
+				fmt.Sprintf("--tag=%v", buildTag(registry, image.Name, hash)),
+				fmt.Sprintf("--tag=%v", buildTag(registry, image.Name, branch)),
+				fmt.Sprintf("--file=%v", image.DockerFile),
+			}, buildArgs(args)...),
+		})
+		builder.logger.Debug(output)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (builder repositoryBuilder) prepareArgs(ctx stdcontext.Context, args []string) ([]string, error) {
-	result := make([]string, 0, len(args))
-	for _, arg := range args {
-		if !hashArgRegex.MatchString(arg) {
-			result = append(result, arg)
-			continue
-		}
-		match := hashArgRegex.FindStringSubmatch(arg)
-		repositoryID := strings.ToLower(match[regexpRepoID])
-		hash, err := builder.repositoryProvider.Hash(ctx, repositoryID)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, strings.ReplaceAll(arg, match[regexpFullStr], hash))
+func (builder repositoryBuilder) tagInfo(ctx stdcontext.Context, repositoryID platform.RepositoryID) (hash, branch string, err error) {
+	hash, err = builder.repositoryProvider.Hash(ctx, repositoryID)
+	if err != nil {
+		return "", "", err
 	}
-	return result, nil
+	branch, err = builder.repositoryProvider.BranchName(ctx, repositoryID)
+	if err != nil {
+		return "", "", err
+	}
+	return hash, branch, nil
+}
+
+func buildArgs(args map[string]string) []string {
+	result := make([]string, 0, len(args))
+	for key, value := range args {
+		result = append(result, fmt.Sprintf("--build-arg=%v=%v", strings.ToUpper(key), value))
+	}
+	return result
+}
+
+func buildTag(registry, imageName, tag string) string {
+	return fmt.Sprintf("%v/%v:%v", registry, imageName, tag)
 }

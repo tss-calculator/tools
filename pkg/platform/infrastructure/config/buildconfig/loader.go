@@ -2,78 +2,90 @@ package buildconfig
 
 import (
 	"encoding/json"
-	"io"
 	"os"
 
-	"github.com/tss-calculator/tools/pkg/platform/application/model"
+	"github.com/pkg/errors"
+
+	"github.com/tss-calculator/tools/pkg/platform/application/model/build"
 )
 
 type Command struct {
 	Executable string   `json:"executable"`
-	Args       []string `json:"args,omitempty"`
-	DependsOn  []string `json:"dependsOn,omitempty"`
+	Args       []string `json:"args"`
 }
 
-type BuildConfig struct {
-	Sources     Command `json:"sources"`
-	DockerImage Command `json:"docker-image"`
+type Image struct {
+	Name       string `json:"name"`
+	Context    string `json:"context"`
+	DockerFile string `json:"dockerFile"`
+	TagBy      string `json:"tagBy,omitempty"`
+}
+
+type Build struct {
+	Sources Command `json:"sources"`
+	Images  []Image `json:"images"`
 }
 
 type Config struct {
-	Build BuildConfig `json:"build"`
+	Build Build `json:"build"`
 }
 
-type ConfigLoader interface {
-	Load(filePath string) (model.BuildConfig, error)
+func NewLoader() *Loader {
+	return &Loader{cache: make(map[string]build.Config)}
 }
 
-func NewConfigLoader() ConfigLoader {
-	return &configLoader{configs: make(map[string]model.BuildConfig)}
+type Loader struct {
+	cache map[string]build.Config
 }
 
-type configLoader struct {
-	configs map[string]model.BuildConfig
-}
-
-func (loader *configLoader) Load(filePath string) (model.BuildConfig, error) {
-	config, ok := loader.configs[filePath]
+func (l *Loader) Load(path string) (build.Config, error) {
+	config, ok := l.cache[path]
 	if ok {
 		return config, nil
 	}
-	config, err := loader.load(filePath)
+	config, err := load(path)
 	if err != nil {
-		return model.BuildConfig{}, err
+		return build.Config{}, err
 	}
-	loader.configs[filePath] = config
+	l.cache[path] = config
 	return config, nil
 }
 
-func (loader *configLoader) load(filePath string) (model.BuildConfig, error) {
-	configFile, err := os.Open(filePath)
+func load(path string) (build.Config, error) {
+	configBody, err := os.ReadFile(path)
 	if err != nil {
-		return model.BuildConfig{}, err
+		return build.Config{}, errors.Wrapf(err, "failed to read config file: %v", path)
 	}
-	defer configFile.Close()
-	configBody, err := io.ReadAll(configFile)
+	var infraConfig Config
+	err = json.Unmarshal(configBody, &infraConfig)
 	if err != nil {
-		return model.BuildConfig{}, err
+		return build.Config{}, errors.Wrap(err, "failed to unmarshal config")
 	}
+	return mapInfraConfigToAppConfig(infraConfig), nil
+}
 
-	var config Config
-	err = json.Unmarshal(configBody, &config)
-	if err != nil {
-		return model.BuildConfig{}, err
+func mapInfraConfigToAppConfig(config Config) build.Config {
+	images := make([]build.Image, 0, len(config.Build.Images))
+	for _, image := range config.Build.Images {
+		images = append(images, build.Image{
+			Name:       image.Name,
+			Context:    image.Context,
+			DockerFile: image.DockerFile,
+			TagBy:      toOptString(image.TagBy),
+		})
 	}
-	return model.BuildConfig{
-		Sources: model.BuildCommand{
+	return build.Config{
+		Sources: build.Command{
 			Executable: config.Build.Sources.Executable,
 			Args:       config.Build.Sources.Args,
-			DependsOn:  config.Build.Sources.DependsOn,
 		},
-		DockerImage: model.BuildCommand{
-			Executable: config.Build.DockerImage.Executable,
-			Args:       config.Build.DockerImage.Args,
-			DependsOn:  config.Build.DockerImage.DependsOn,
-		},
-	}, err
+		Images: images,
+	}
+}
+
+func toOptString(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
 }

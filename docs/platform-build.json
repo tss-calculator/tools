@@ -2,12 +2,22 @@
   "build": {
     "sources": {
       "executable": "brewkit",
-      "args": ["build"]
+      "args": [
+        "build"
+      ]
     },
-    "docker-image": {
-      "executable": "brewkit",
-      "args": ["build"],
-      "dependsOn": [""]
-    }
+    "images": [
+      {
+        "name": "tss-calculator/artifact/frontend-server",
+        "context": ".",
+        "dockerFile": "docker/Artifact.Dockerfile"
+      },
+      {
+        "name": "tss-calculator/frontend-server",
+        "context": ".",
+        "dockerFile": "docker/Dockerfile",
+        "tagBy": "frontend"
+      }
+    ]
   }
 }

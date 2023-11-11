@@ -3,10 +3,9 @@ package platformconfig
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
-	"github.com/tss-calculator/tools/pkg/platform/application/model"
+	"github.com/tss-calculator/tools/pkg/platform/application/model/platform"
 )
 
 type Context struct {
@@ -15,41 +14,39 @@ type Context struct {
 }
 
 type Repository struct {
-	GitSrc string `json:"gitSrc"`
+	GitSrc    string   `json:"gitSrc"`
+	DependsOn []string `json:"dependsOn"`
+	Images    []string `json:"images"`
 }
 
 type Config struct {
 	RepoSrc      string                `json:"repoSrc"`
+	Registry     string                `json:"registry"`
 	Contexts     map[string]Context    `json:"contexts"`
 	Repositories map[string]Repository `json:"repositories"`
 }
 
-func Load(filePath string) (model.Platform, error) {
-	configFile, err := os.Open(filePath)
+func Load(path string) (platform.Platform, error) {
+	configBody, err := os.ReadFile(path)
 	if err != nil {
-		return model.Platform{}, err
-	}
-	defer configFile.Close()
-	configBody, err := io.ReadAll(configFile)
-	if err != nil {
-		return model.Platform{}, err
+		return platform.Platform{}, err
 	}
 
 	var config Config
 	err = json.Unmarshal(configBody, &config)
 	if err != nil {
-		return model.Platform{}, err
+		return platform.Platform{}, err
 	}
 	err = assertRepositories(config)
 	if err != nil {
-		return model.Platform{}, err
+		return platform.Platform{}, err
 	}
 
 	for contextID, context := range config.Contexts {
 		if context.BaseContext != "" {
 			baseContext, ok := config.Contexts[context.BaseContext]
 			if !ok {
-				return model.Platform{}, fmt.Errorf(
+				return platform.Platform{}, fmt.Errorf(
 					"base context %v for context %v not found", context.BaseContext, contextID,
 				)
 			}
@@ -57,29 +54,32 @@ func Load(filePath string) (model.Platform, error) {
 		}
 	}
 
-	return MapToPlatformConfig(config), nil
+	return mapToPlatformConfig(config), nil
 }
 
-func MapToPlatformConfig(config Config) model.Platform {
-	contexts := make(map[model.ContextID]model.Context, len(config.Contexts))
+func mapToPlatformConfig(config Config) platform.Platform {
+	contexts := make(map[platform.ContextID]platform.Context)
 	for contextID, context := range config.Contexts {
-		contexts[contextID] = model.Context{
+		contexts[contextID] = platform.Context{
 			ID:            contextID,
 			BaseContextID: toOptString(context.BaseContext),
 			Branches:      context.Branches,
 		}
 	}
 
-	repositories := make([]model.Repository, 0, len(config.Repositories))
+	repositories := make([]platform.Repository, 0, len(config.Repositories))
 	for repositoryID, repository := range config.Repositories {
-		repositories = append(repositories, model.Repository{
-			ID:     repositoryID,
-			GitSrc: repository.GitSrc,
+		repositories = append(repositories, platform.Repository{
+			ID:        repositoryID,
+			GitSrc:    repository.GitSrc,
+			Images:    repository.Images,
+			DependsOn: repository.DependsOn,
 		})
 	}
 
-	return model.Platform{
+	return platform.Platform{
 		RepoSrc:      config.RepoSrc,
+		Registry:     config.Registry,
 		Contexts:     contexts,
 		Repositories: repositories,
 	}

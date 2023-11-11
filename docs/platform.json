@@ -1,5 +1,6 @@
 {
   "repoSrc": "src",
+  "registry": "registry.dev.xscloud.ru",
   "contexts": {
     "default": {
       "branches": {
@@ -13,7 +14,20 @@
   },
   "repositories": {
     "frontend": {
-      "gitSrc": "git@github.com:tss-calculator/frontend.git"
+      "gitSrc": "git@github.com:tss-calculator/frontend.git",
+      "images": [
+        "tss-calculator/artifact/frontend"
+      ]
+    },
+    "frontend-server": {
+      "gitSrc": "git@github.com:tss-calculator/frontend-server.git",
+      "dependsOn": [
+        "frontend"
+      ],
+      "images": [
+        "tss-calculator/artifact/frontend-server",
+        "tss-calculator/frontend-server"
+      ]
     }
   }
 }
