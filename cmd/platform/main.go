@@ -44,11 +44,16 @@ func main() {
 			},
 			&cli.Command{
 				Name: "build",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name: "push-images",
+					},
+				},
 				Before: func(c *cli.Context) error {
 					return checkout(c.Context, c.String("context"))
 				},
 				Action: func(c *cli.Context) error {
-					return build(c.Context)
+					return build(c.Context, c.Bool("push-images"))
 				},
 			},
 			&cli.Command{

@@ -34,6 +34,16 @@ type repositoryBuilder struct {
 	runner             command.Runner
 }
 
+func (builder repositoryBuilder) Push(ctx stdcontext.Context, registry string, repositories map[platform.RepositoryID]platform.Repository) error {
+	for _, repository := range repositories {
+		err := builder.pushDockerImages(ctx, registry, repository)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (builder repositoryBuilder) Build(
 	ctx stdcontext.Context,
 	registry string,
@@ -153,6 +163,61 @@ func (builder repositoryBuilder) buildDockerImages(ctx stdcontext.Context, regis
 		}
 	}
 	return nil
+}
+
+func (builder repositoryBuilder) pushDockerImages(ctx stdcontext.Context, registry string, repository platform.Repository) error {
+	builder.logger.Info(fmt.Sprintf("start push docker images for \"%v\"", repository.ID))
+	start := time.Now()
+	defer func() {
+		builder.logger.Info(fmt.Sprintf("done in %v", time.Since(start)))
+	}()
+
+	repositoryPath := builder.repositoryProvider.RepositoryPath(repository.ID)
+	buildConfig, err := builder.configLoader.Load(repositoryPath + "/platform-build.json")
+	if err != nil {
+		return err
+	}
+
+	for _, image := range buildConfig.Images {
+		var hash string
+		var branch string
+		if image.TagBy == nil {
+			hash, branch, err = builder.tagInfo(ctx, repository.ID)
+		} else {
+			hash, branch, err = builder.tagInfo(ctx, *image.TagBy)
+		}
+		if err != nil {
+			return err
+		}
+
+		if image.SkipPush {
+			builder.logger.Info(fmt.Sprintf("skip push %v/%v", registry, image.Name))
+			continue
+		}
+		err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, hash))
+		if err != nil {
+			return err
+		}
+		err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, branch))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (builder repositoryBuilder) pushDockerImage(ctx stdcontext.Context, repositoryID platform.RepositoryID, tag string) error {
+	builder.logger.Info(fmt.Sprintf("push image %v", tag))
+	output, err := builder.runner.Execute(ctx, command.Command{
+		WorkDir:    builder.repositoryProvider.RepositoryPath(repositoryID),
+		Executable: "docker",
+		Args: []string{
+			"push",
+			tag,
+		},
+	})
+	builder.logger.Debug(output)
+	return err
 }
 
 func (builder repositoryBuilder) tagInfo(ctx stdcontext.Context, repositoryID platform.RepositoryID) (hash, branch string, err error) {

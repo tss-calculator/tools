@@ -25,11 +25,12 @@ type RepositoryProvider interface {
 
 type RepositoryBuilder interface {
 	Build(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]platformconfig.Repository) error
+	Push(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]platformconfig.Repository) error
 }
 
 type Platform interface {
 	Checkout(ctx context.Context, context platformconfig.ContextID) error
-	Build(ctx context.Context) error
+	Build(ctx context.Context, skipPush bool) error
 	ResetContext(ctx context.Context) error
 	MergeContext(ctx context.Context, fromContext platformconfig.ContextID) error
 	PushContext(ctx context.Context, context platformconfig.ContextID, force bool) error
@@ -57,13 +58,20 @@ type platform struct {
 	repositoryBuilder  RepositoryBuilder
 }
 
-func (service platform) Build(ctx context.Context) error {
+func (service platform) Build(ctx context.Context, pushImages bool) error {
 	repositoryMap := make(map[platformconfig.RepositoryID]platformconfig.Repository)
 	for _, repository := range service.config.Repositories {
 		r := repository
 		repositoryMap[r.ID] = r
 	}
-	return service.repositoryBuilder.Build(ctx, service.config.Registry, repositoryMap)
+	err := service.repositoryBuilder.Build(ctx, service.config.Registry, repositoryMap)
+	if err != nil {
+		return err
+	}
+	if pushImages {
+		return service.repositoryBuilder.Push(ctx, service.config.Registry, repositoryMap)
+	}
+	return nil
 }
 
 func (service platform) Checkout(ctx context.Context, contextID platformconfig.ContextID) error {
