@@ -30,7 +30,7 @@ type RepositoryBuilder interface {
 
 type Platform interface {
 	Checkout(ctx context.Context, context platformconfig.ContextID) error
-	Build(ctx context.Context, skipPush bool) error
+	Build(ctx context.Context, pushImages bool) error
 	ResetContext(ctx context.Context) error
 	MergeContext(ctx context.Context, fromContext platformconfig.ContextID) error
 	PushContext(ctx context.Context, context platformconfig.ContextID, force bool) error
