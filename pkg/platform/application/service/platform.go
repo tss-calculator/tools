@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"time"
@@ -23,9 +24,15 @@ type RepositoryProvider interface {
 	Push(ctx context.Context, repositoryID platformconfig.RepositoryID, dryRun bool) (string, error)
 }
 
+type RepositoryInfo struct {
+	platformconfig.Repository
+	Hash   []byte
+	Branch *string
+}
+
 type RepositoryBuilder interface {
-	Build(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]platformconfig.Repository) error
-	Push(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]platformconfig.Repository) error
+	Build(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]RepositoryInfo) error
+	Push(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]RepositoryInfo) error
 }
 
 type Platform interface {
@@ -47,6 +54,7 @@ func NewPlatformService(
 		logger:             logger,
 		repositoryProvider: repositoryProvider,
 		repositoryBuilder:  repositoryBuilder,
+		repositoryMap:      buildRepositoryMap(config),
 	}
 }
 
@@ -56,15 +64,31 @@ type platform struct {
 	logger             applogger.Logger
 	repositoryProvider RepositoryProvider
 	repositoryBuilder  RepositoryBuilder
+	repositoryMap      map[platformconfig.RepositoryID]platformconfig.Repository
 }
 
 func (service platform) Build(ctx context.Context, pushImages bool) error {
-	repositoryMap := make(map[platformconfig.RepositoryID]platformconfig.Repository)
-	for _, repository := range service.config.Repositories {
-		r := repository
-		repositoryMap[r.ID] = r
+	repositoryMap := make(map[platformconfig.RepositoryID]RepositoryInfo)
+	err := service.iterateRepositories(func(repository platformconfig.Repository) error {
+		hash, err := service.buildRepositoryHash(ctx, repository)
+		if err != nil {
+			return err
+		}
+		branch, err := service.buildRepositoryBranch(ctx, repository)
+		if err != nil {
+			return err
+		}
+		repositoryMap[repository.ID] = RepositoryInfo{
+			repository,
+			hash,
+			branch,
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	err := service.repositoryBuilder.Build(ctx, service.config.Registry, repositoryMap)
+	err = service.repositoryBuilder.Build(ctx, service.config.Registry, repositoryMap)
 	if err != nil {
 		return err
 	}
@@ -180,4 +204,48 @@ func (service platform) iterateRepositories(f func(repository platformconfig.Rep
 		}
 	}
 	return nil
+}
+
+func (service platform) buildRepositoryHash(ctx context.Context, repository platformconfig.Repository) ([]byte, error) {
+	hash := sha256.New()
+	commit, err := service.repositoryProvider.Hash(ctx, repository.ID)
+	if err != nil {
+		return nil, err
+	}
+	hash.Write([]byte(commit))
+	for _, depends := range repository.DependsOn {
+		repositoryHash, err := service.buildRepositoryHash(ctx, service.repositoryMap[depends])
+		if err != nil {
+			return nil, err
+		}
+		hash.Write(repositoryHash)
+	}
+	return hash.Sum(nil), nil
+}
+
+func (service platform) buildRepositoryBranch(ctx context.Context, repository platformconfig.Repository) (*string, error) {
+	b, err := service.repositoryProvider.BranchName(ctx, repository.ID)
+	if err != nil {
+		return nil, err
+	}
+	repositoryBranch := &b
+	for _, depends := range repository.DependsOn {
+		branch, err := service.buildRepositoryBranch(ctx, service.repositoryMap[depends])
+		if err != nil {
+			return nil, err
+		}
+		if repositoryBranch != branch {
+			return nil, nil
+		}
+	}
+	return repositoryBranch, nil
+}
+
+func buildRepositoryMap(config platformconfig.Platform) map[platformconfig.RepositoryID]platformconfig.Repository {
+	repositoryMap := make(map[platformconfig.RepositoryID]platformconfig.Repository)
+	for _, repository := range config.Repositories {
+		r := repository
+		repositoryMap[r.ID] = r
+	}
+	return repositoryMap
 }

@@ -9,7 +9,6 @@ type Image struct {
 	Name       string
 	Context    string
 	DockerFile string
-	TagBy      *string
 	SkipPush   bool
 }
 

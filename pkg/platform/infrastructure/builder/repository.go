@@ -2,6 +2,7 @@ package builder
 
 import (
 	stdcontext "context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -34,7 +35,7 @@ type repositoryBuilder struct {
 	runner             command.Runner
 }
 
-func (builder repositoryBuilder) Push(ctx stdcontext.Context, registry string, repositories map[platform.RepositoryID]platform.Repository) error {
+func (builder repositoryBuilder) Push(ctx stdcontext.Context, registry string, repositories map[platform.RepositoryID]service.RepositoryInfo) error {
 	for _, repository := range repositories {
 		err := builder.pushDockerImages(ctx, registry, repository)
 		if err != nil {
@@ -47,14 +48,18 @@ func (builder repositoryBuilder) Push(ctx stdcontext.Context, registry string, r
 func (builder repositoryBuilder) Build(
 	ctx stdcontext.Context,
 	registry string,
-	repositories map[platform.RepositoryID]platform.Repository,
+	repositories map[platform.RepositoryID]service.RepositoryInfo,
 ) error {
 	buildMap := make(map[platform.RepositoryID]struct{})
-	buildRepository := func(repository platform.Repository) error {
+	buildRepository := func(repository service.RepositoryInfo) error {
 		if _, ok := buildMap[repository.ID]; ok {
 			return nil
 		}
-		err := builder.buildRepository(ctx, registry, repository)
+		err := builder.buildSources(ctx, repository)
+		if err != nil {
+			return err
+		}
+		err = builder.buildDockerImages(ctx, registry, repository, repositories)
 		if err != nil {
 			return err
 		}
@@ -77,15 +82,7 @@ func (builder repositoryBuilder) Build(
 	return nil
 }
 
-func (builder repositoryBuilder) buildRepository(ctx stdcontext.Context, registry string, repository platform.Repository) error {
-	err := builder.buildSources(ctx, repository)
-	if err != nil {
-		return err
-	}
-	return builder.buildDockerImages(ctx, registry, repository)
-}
-
-func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repository platform.Repository) error {
+func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repository service.RepositoryInfo) error {
 	builder.logger.Info(fmt.Sprintf("start build sources \"%v\"", repository.ID))
 	start := time.Now()
 	defer func() {
@@ -107,7 +104,12 @@ func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repository
 	return err
 }
 
-func (builder repositoryBuilder) buildDockerImages(ctx stdcontext.Context, registry string, repository platform.Repository) error {
+func (builder repositoryBuilder) buildDockerImages(
+	ctx stdcontext.Context,
+	registry string,
+	repository service.RepositoryInfo,
+	repositories map[platform.RepositoryID]service.RepositoryInfo,
+) error {
 	builder.logger.Info(fmt.Sprintf("start build docker images for \"%v\"", repository.ID))
 	start := time.Now()
 	defer func() {
@@ -123,39 +125,30 @@ func (builder repositoryBuilder) buildDockerImages(ctx stdcontext.Context, regis
 	args := make(map[string]string)
 	args["REGISTRY"] = registry
 	for _, depends := range repository.DependsOn {
-		hash, err2 := builder.repositoryProvider.Hash(ctx, depends)
-		if err2 != nil {
-			return err2
-		}
-		args[strings.ReplaceAll(depends, "-", "_")] = hash
+		r := repositories[depends]
+		args[strings.ReplaceAll(depends, "-", "_")] = hex.EncodeToString(r.Hash)
 	}
 
-	repositoryHash, err := builder.repositoryProvider.Hash(ctx, repository.ID)
-	if err != nil {
-		return err
-	}
-	args[strings.ReplaceAll(repository.ID, "-", "_")] = repositoryHash
+	args[strings.ReplaceAll(repository.ID, "-", "_")] = hex.EncodeToString(repository.Hash)
 	for _, image := range buildConfig.Images {
-		var hash string
-		var branch string
-		if image.TagBy == nil {
-			hash, branch, err = builder.tagInfo(ctx, repository.ID)
-		} else {
-			hash, branch, err = builder.tagInfo(ctx, *image.TagBy)
+		tags := []string{
+			"--tag=" + buildTag(registry, image.Name, hex.EncodeToString(repository.Hash)),
 		}
-		if err != nil {
-			return err
+		if repository.Branch != nil {
+			tags = append(tags, "--tag="+buildTag(registry, image.Name, *repository.Branch))
 		}
+
+		dockerArgs := []string{
+			"build",
+			image.Context,
+			fmt.Sprintf("--file=%v", image.DockerFile),
+		}
+		dockerArgs = append(dockerArgs, tags...)
+		dockerArgs = append(dockerArgs, buildArgs(args)...)
 		output, err := builder.runner.Execute(ctx, command.Command{
 			WorkDir:    repositoryPath,
 			Executable: "docker",
-			Args: append([]string{
-				"build",
-				image.Context,
-				fmt.Sprintf("--tag=%v", buildTag(registry, image.Name, hash)),
-				fmt.Sprintf("--tag=%v", buildTag(registry, image.Name, branch)),
-				fmt.Sprintf("--file=%v", image.DockerFile),
-			}, buildArgs(args)...),
+			Args:       dockerArgs,
 		})
 		builder.logger.Debug(output)
 		if err != nil {
@@ -165,7 +158,7 @@ func (builder repositoryBuilder) buildDockerImages(ctx stdcontext.Context, regis
 	return nil
 }
 
-func (builder repositoryBuilder) pushDockerImages(ctx stdcontext.Context, registry string, repository platform.Repository) error {
+func (builder repositoryBuilder) pushDockerImages(ctx stdcontext.Context, registry string, repository service.RepositoryInfo) error {
 	builder.logger.Info(fmt.Sprintf("start push docker images for \"%v\"", repository.ID))
 	start := time.Now()
 	defer func() {
@@ -179,28 +172,19 @@ func (builder repositoryBuilder) pushDockerImages(ctx stdcontext.Context, regist
 	}
 
 	for _, image := range buildConfig.Images {
-		var hash string
-		var branch string
-		if image.TagBy == nil {
-			hash, branch, err = builder.tagInfo(ctx, repository.ID)
-		} else {
-			hash, branch, err = builder.tagInfo(ctx, *image.TagBy)
-		}
-		if err != nil {
-			return err
-		}
-
 		if image.SkipPush {
 			builder.logger.Info(fmt.Sprintf("skip push %v/%v", registry, image.Name))
 			continue
 		}
-		err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, hash))
+		err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, hex.EncodeToString(repository.Hash)))
 		if err != nil {
 			return err
 		}
-		err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, branch))
-		if err != nil {
-			return err
+		if repository.Branch != nil {
+			err = builder.pushDockerImage(ctx, repository.ID, buildTag(registry, image.Name, *repository.Branch))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -218,18 +202,6 @@ func (builder repositoryBuilder) pushDockerImage(ctx stdcontext.Context, reposit
 	})
 	builder.logger.Debug(output)
 	return err
-}
-
-func (builder repositoryBuilder) tagInfo(ctx stdcontext.Context, repositoryID platform.RepositoryID) (hash, branch string, err error) {
-	hash, err = builder.repositoryProvider.Hash(ctx, repositoryID)
-	if err != nil {
-		return "", "", err
-	}
-	branch, err = builder.repositoryProvider.BranchName(ctx, repositoryID)
-	if err != nil {
-		return "", "", err
-	}
-	return hash, branch, nil
 }
 
 func buildArgs(args map[string]string) []string {

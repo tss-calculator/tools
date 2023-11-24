@@ -18,7 +18,6 @@ type Image struct {
 	Name       string `json:"name"`
 	Context    string `json:"context"`
 	DockerFile string `json:"dockerFile"`
-	TagBy      string `json:"tagBy,omitempty"`
 	SkipPush   bool   `json:"skipPush"`
 }
 
@@ -72,7 +71,6 @@ func mapInfraConfigToAppConfig(config Config) build.Config {
 			Name:       image.Name,
 			Context:    image.Context,
 			DockerFile: image.DockerFile,
-			TagBy:      toOptString(image.TagBy),
 			SkipPush:   image.SkipPush,
 		})
 	}
@@ -83,11 +81,4 @@ func mapInfraConfigToAppConfig(config Config) build.Config {
 		},
 		Images: images,
 	}
-}
-
-func toOptString(v string) *string {
-	if v == "" {
-		return nil
-	}
-	return &v
 }

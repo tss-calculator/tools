@@ -16,8 +16,7 @@
       {
         "name": "tss-calculator/frontend-server",
         "context": ".",
-        "dockerFile": "docker/Dockerfile",
-        "tagBy": "frontend"
+        "dockerFile": "docker/Dockerfile"
       }
     ]
   }
