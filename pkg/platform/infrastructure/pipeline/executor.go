@@ -16,17 +16,21 @@ import (
 func NewPipelineExecutor(
 	registry string,
 	pipelines map[platform.PipelineID]string,
-	runner command.Runner) service.PipelineExecutor {
+	runner command.Runner,
+	repositoryProvider service.RepositoryProvider,
+) service.PipelineExecutor {
 	return &executor{
-		registry:  registry,
-		pipelines: pipelines,
-		runner:    runner,
+		registry:           registry,
+		pipelines:          pipelines,
+		runner:             runner,
+		repositoryProvider: repositoryProvider,
 	}
 }
 
 type Repository struct {
-	Hash   string
-	Images []string
+	Hash      string
+	Images    []string
+	Directory string
 }
 
 type pipelineVariables struct {
@@ -40,7 +44,8 @@ type executor struct {
 	registry  string
 	pipelines map[platform.PipelineID]string
 
-	runner command.Runner
+	runner             command.Runner
+	repositoryProvider service.RepositoryProvider
 }
 
 func (e executor) Execute(
@@ -72,8 +77,9 @@ func (e executor) loadPipelineVariables(
 	repositories := make(map[string]Repository)
 	for id, repository := range repositoryMap {
 		repositories[id] = Repository{
-			Hash:   hex.EncodeToString(repository.Hash),
-			Images: repository.Images,
+			Hash:      hex.EncodeToString(repository.Hash),
+			Images:    repository.Images,
+			Directory: e.repositoryProvider.RepositoryPath(id),
 		}
 	}
 	return pipelineVariables{

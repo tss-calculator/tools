@@ -29,7 +29,7 @@ func NewDependencyContainer(
 	runner := command.NewCommandRunner(logger, silentMode)
 	repositoryProvider := provider.NewRepositoryProvider(platformConfig.RepoSrc, runner)
 	repositoryBuilder := builder.NewRepositoryBuilder(logger, buildconfig.NewLoader(), repositoryProvider, runner)
-	pipelineExecutor := pipeline.NewPipelineExecutor(platformConfig.Registry, platformConfig.Pipelines, runner)
+	pipelineExecutor := pipeline.NewPipelineExecutor(platformConfig.Registry, platformConfig.Pipelines, runner, repositoryProvider)
 	platformService := service.NewPlatformService(platformConfig, logger, repositoryProvider, repositoryBuilder, pipelineExecutor)
 
 	return &container{
