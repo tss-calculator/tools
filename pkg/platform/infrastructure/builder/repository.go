@@ -95,12 +95,12 @@ func (builder repositoryBuilder) buildSources(ctx stdcontext.Context, repository
 		return err
 	}
 
-	output, err := builder.runner.Execute(ctx, command.Command{
+	_, err = builder.runner.Execute(ctx, command.Command{
 		WorkDir:    repositoryPath,
 		Executable: buildConfig.Sources.Executable,
 		Args:       buildConfig.Sources.Args,
+		Verbose:    true,
 	})
-	builder.logger.Debug(output)
 	return err
 }
 
@@ -145,12 +145,12 @@ func (builder repositoryBuilder) buildDockerImages(
 		}
 		dockerArgs = append(dockerArgs, tags...)
 		dockerArgs = append(dockerArgs, buildArgs(args)...)
-		output, err := builder.runner.Execute(ctx, command.Command{
+		_, err = builder.runner.Execute(ctx, command.Command{
 			WorkDir:    repositoryPath,
 			Executable: "docker",
 			Args:       dockerArgs,
+			Verbose:    true,
 		})
-		builder.logger.Debug(output)
 		if err != nil {
 			return err
 		}
@@ -192,15 +192,15 @@ func (builder repositoryBuilder) pushDockerImages(ctx stdcontext.Context, regist
 
 func (builder repositoryBuilder) pushDockerImage(ctx stdcontext.Context, repositoryID platform.RepositoryID, tag string) error {
 	builder.logger.Info(fmt.Sprintf("push image %v", tag))
-	output, err := builder.runner.Execute(ctx, command.Command{
+	_, err := builder.runner.Execute(ctx, command.Command{
 		WorkDir:    builder.repositoryProvider.RepositoryPath(repositoryID),
 		Executable: "docker",
 		Args: []string{
 			"push",
 			tag,
 		},
+		Verbose: true,
 	})
-	builder.logger.Debug(output)
 	return err
 }
 

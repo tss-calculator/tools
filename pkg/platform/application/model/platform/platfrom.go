@@ -19,9 +19,12 @@ type Repository struct {
 	Images    []Image
 }
 
+type PipelineID = string
+
 type Platform struct {
 	RepoSrc      string
 	Registry     string
 	Contexts     map[ContextID]Context
 	Repositories []Repository
+	Pipelines    map[PipelineID]string
 }

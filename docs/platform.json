@@ -12,6 +12,9 @@
       "branches": {}
     }
   },
+  "pipelines": {
+    "deploy-dev": "pipelines/test"
+  },
   "repositories": {
     "frontend": {
       "gitSrc": "git@github.com:tss-calculator/frontend.git",

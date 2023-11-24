@@ -35,12 +35,22 @@ type RepositoryBuilder interface {
 	Push(ctx context.Context, registry string, repositories map[platformconfig.RepositoryID]RepositoryInfo) error
 }
 
+type PipelineExecutor interface {
+	Execute(
+		ctx context.Context,
+		contextID platformconfig.ContextID,
+		pipeline platformconfig.PipelineID,
+		repositoryMap map[platformconfig.RepositoryID]RepositoryInfo,
+	) error
+}
+
 type Platform interface {
 	Checkout(ctx context.Context, context platformconfig.ContextID) error
 	Build(ctx context.Context, pushImages bool) error
 	ResetContext(ctx context.Context) error
 	MergeContext(ctx context.Context, fromContext platformconfig.ContextID) error
 	PushContext(ctx context.Context, context platformconfig.ContextID, force bool) error
+	ExecutePipelines(ctx context.Context, contextID platformconfig.ContextID, pipelines []string) error
 }
 
 func NewPlatformService(
@@ -48,6 +58,7 @@ func NewPlatformService(
 	logger applogger.Logger,
 	repositoryProvider RepositoryProvider,
 	repositoryBuilder RepositoryBuilder,
+	pipelineExecutor PipelineExecutor,
 ) Platform {
 	return &platform{
 		config:             config,
@@ -55,16 +66,48 @@ func NewPlatformService(
 		repositoryProvider: repositoryProvider,
 		repositoryBuilder:  repositoryBuilder,
 		repositoryMap:      buildRepositoryMap(config),
+		pipelineExecutor:   pipelineExecutor,
 	}
 }
 
 type platform struct {
-	config platformconfig.Platform
+	config        platformconfig.Platform
+	repositoryMap map[platformconfig.RepositoryID]platformconfig.Repository
 
 	logger             applogger.Logger
 	repositoryProvider RepositoryProvider
 	repositoryBuilder  RepositoryBuilder
-	repositoryMap      map[platformconfig.RepositoryID]platformconfig.Repository
+	pipelineExecutor   PipelineExecutor
+}
+
+func (service platform) ExecutePipelines(ctx context.Context, contextID platformconfig.ContextID, pipelines []string) error {
+	repositoryMap := make(map[platformconfig.RepositoryID]RepositoryInfo)
+	err := service.iterateRepositories(func(repository platformconfig.Repository) error {
+		hash, err := service.buildRepositoryHash(ctx, repository)
+		if err != nil {
+			return err
+		}
+		branch, err := service.buildRepositoryBranch(ctx, repository)
+		if err != nil {
+			return err
+		}
+		repositoryMap[repository.ID] = RepositoryInfo{
+			repository,
+			hash,
+			branch,
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, pipeline := range pipelines {
+		err = service.pipelineExecutor.Execute(ctx, contextID, pipeline, repositoryMap)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (service platform) Build(ctx context.Context, pushImages bool) error {

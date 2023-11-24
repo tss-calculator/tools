@@ -10,6 +10,7 @@ import (
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/builder"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/command"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/config/buildconfig"
+	"github.com/tss-calculator/tools/pkg/platform/infrastructure/pipeline"
 	"github.com/tss-calculator/tools/pkg/platform/infrastructure/provider"
 )
 
@@ -23,11 +24,13 @@ type Container interface {
 func NewDependencyContainer(
 	logger applogger.Logger,
 	platformConfig platform.Platform,
+	silentMode bool,
 ) Container {
-	runner := command.NewCommandRunner(logger)
+	runner := command.NewCommandRunner(logger, silentMode)
 	repositoryProvider := provider.NewRepositoryProvider(platformConfig.RepoSrc, runner)
 	repositoryBuilder := builder.NewRepositoryBuilder(logger, buildconfig.NewLoader(), repositoryProvider, runner)
-	platformService := service.NewPlatformService(platformConfig, logger, repositoryProvider, repositoryBuilder)
+	pipelineExecutor := pipeline.NewPipelineExecutor(platformConfig.Registry, platformConfig.Pipelines, runner)
+	platformService := service.NewPlatformService(platformConfig, logger, repositoryProvider, repositoryBuilder, pipelineExecutor)
 
 	return &container{
 		platform:           platformService,

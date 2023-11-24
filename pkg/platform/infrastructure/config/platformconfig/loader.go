@@ -24,6 +24,7 @@ type Config struct {
 	Registry     string                `json:"registry"`
 	Contexts     map[string]Context    `json:"contexts"`
 	Repositories map[string]Repository `json:"repositories"`
+	Pipelines    map[string]string     `json:"pipelines"`
 }
 
 func Load(path string) (platform.Platform, error) {
@@ -82,6 +83,7 @@ func mapToPlatformConfig(config Config) platform.Platform {
 		Registry:     config.Registry,
 		Contexts:     contexts,
 		Repositories: repositories,
+		Pipelines:    config.Pipelines,
 	}
 }
 

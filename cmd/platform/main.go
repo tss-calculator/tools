@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		mainLogger.FatalError(err, "failed load platform config")
 	}
-	container := dependency.NewDependencyContainer(mainLogger, platformConfig)
+	container := dependency.NewDependencyContainer(mainLogger, platformConfig, os.Getenv("SILENT") != "")
 	ctx = dependency.ContainerToContext(ctx, container)
 
 	app := &cli.App{
@@ -86,6 +86,18 @@ func main() {
 				},
 				Action: func(c *cli.Context) error {
 					return pushContext(c.Context, c.String("context"), c.Bool("force"))
+				},
+			},
+			&cli.Command{
+				Name: "execute",
+				Flags: []cli.Flag{
+					&cli.StringSliceFlag{
+						Name:     "pipelines",
+						Required: true,
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return executePipeline(c.Context, c.String("context"), c.StringSlice("pipelines"))
 				},
 			},
 		},
