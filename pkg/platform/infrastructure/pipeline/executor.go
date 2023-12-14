@@ -95,13 +95,24 @@ func (e executor) buildPipeline(pipelineID platform.PipelineID, variables pipeli
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to create temporary file for %v pipeline", pipelineID)
 	}
-	pipelineTemplate, err := template.ParseFiles(e.pipelines[pipelineID])
+	pipelineTemplate, err := os.ReadFile(e.pipelines[pipelineID])
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read %v pipeline template file", e.pipelines[pipelineID])
+	}
+	pipeline, err := template.New("pipeline.tpl").Funcs(templateFunctions).Parse(string(pipelineTemplate))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse %v pipeline template", pipelineID)
 	}
-	err = pipelineTemplate.Execute(pipelineFile, variables)
+	err = pipeline.Execute(pipelineFile, variables)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to execute %v pipeline template", pipelineID)
 	}
 	return pipelineFile, nil
+}
+
+var templateFunctions = template.FuncMap{
+	"DirExist": func(path string) bool {
+		_, err2 := os.Stat(path)
+		return err2 == nil
+	},
 }
