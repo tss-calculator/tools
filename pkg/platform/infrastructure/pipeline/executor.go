@@ -4,6 +4,7 @@ import (
 	stdcontext "context"
 	"encoding/hex"
 	"os"
+	"strings"
 	"text/template"
 
 	"github.com/pkg/errors"
@@ -115,4 +116,7 @@ var templateFunctions = template.FuncMap{
 		_, err2 := os.Stat(path)
 		return err2 == nil
 	},
+	"ToUpper": strings.ToUpper,
+	"ToLower": strings.ToLower,
+	"Replace": strings.ReplaceAll,
 }
